@@ -6,31 +6,29 @@ from math import ceil
 import os
 # kindly read the readme text file before using this code 
 
-BITS_PER_VALUE = 6  # Number of bits used for compressed data
-BITS_PER_BYTE = 8  # Number of bits in a byte
-IMAGE_TYPE_24BIT = 0  # Flag for 24-bit images (RGB)
-IMAGE_TYPE_32BIT = 1  # Flag for 32-bit images (RGBA)
+BITS_PER_VALUE = 6  
+BITS_PER_BYTE = 8  
+IMAGE_TYPE_24BIT = 0  
+IMAGE_TYPE_32BIT = 1  
 
 def find_msv_position(val):
     
-    val_int = int(val)  # Convert value to integer
-    return 7 if val_int == 0 else 7 - (val_int.bit_length() - 1)  # Return the MSB position
-
+    val_int = int(val)  
+    return 7 if val_int == 0 else 7 - (val_int.bit_length() - 1)  
 def vadf_compress_channel(channel, k_bits=3):
     
     if not 1 <= k_bits <= 3:
-        raise ValueError("k_bits must be between 1 and 3")  # Validate k_bits
-
+        raise ValueError("k_bits must be between 1 and 3")  
     compressed_bits = []  # List to hold compressed bit values
-    mask = (1 << k_bits) - 1  # mask for the number of bits
+    mask = (1 << k_bits) - 1  
 
     
     for val in channel.flatten():
-        pos = find_msv_position(val)  # Find MSB position
-        available_bits = 7 - pos  # Calculates how many bits are available for use
+        pos = find_msv_position(val)  
+        available_bits = 7 - pos  
 
         if available_bits <= 0:
-            data = 0  # No bits available, set data to 0
+            data = 0  
         else:
             shift = available_bits - k_bits  
             if shift > 0:
@@ -42,56 +40,52 @@ def vadf_compress_channel(channel, k_bits=3):
             else:
                 data = (val << abs(shift)) & mask  
 
-        # Pack the MSB position and data into a single value
+       
         packed = (pos << 3) | data
-        compressed_bits.extend([(packed >> (5 - i)) & 1 for i in range(6)])  # Convert to bits and add to list
-
-    num_bits = len(compressed_bits)  # Total number of bits compressed
-    num_bytes = ceil(num_bits / BITS_PER_BYTE)  # Calculates how many bytes are needed
-    compressed = bytearray(num_bytes)  # Create a bytearray for the compressed data
-
-    # Pack bits into bytes
+        compressed_bits.extend([(packed >> (5 - i)) & 1 for i in range(6)])  
+    num_bits = len(compressed_bits)  
+    num_bytes = ceil(num_bits / BITS_PER_BYTE)  
+    compressed = bytearray(num_bytes)  
+    
     for i in range(num_bytes):
         byte = 0
         for j in range(BITS_PER_BYTE):
             idx = i * BITS_PER_BYTE + j
             if idx < num_bits:
-                byte |= compressed_bits[idx] << (7 - j)  # Set the bit in the correct position
-        compressed[i] = byte  # Store the packed byte
+                byte |= compressed_bits[idx] << (7 - j)  
+        compressed[i] = byte  
 
-    return compressed, num_bits  # Return compressed data and number of bits used
+    return compressed, num_bits 
 
 def vadf_decompress_channel(compressed, original_shape, k_bits=3, num_bits=None):
    
-    height, width = original_shape  # Get dimensions of the original img
-    total_pixels = height * width  # Calculate total number of pixels
-
-    bit_array = []  # List to hold the decompressed bits
+    height, width = original_shape  
+    total_pixels = height * width  
+    bit_array = [] 
     for byte in compressed:
-        bit_array.extend([(byte >> (7 - i)) & 1 for i in range(BITS_PER_BYTE)])  # Converts bytes to bits
+        bit_array.extend([(byte >> (7 - i)) & 1 for i in range(BITS_PER_BYTE)])  
     
     if num_bits:
-        bit_array = bit_array[:num_bits]  # Limit to num_bits if provided
+        bit_array = bit_array[:num_bits]  
 
-    reconstructed = []  # List to hold reconstructed pixel values
+    reconstructed = []  
     for i in range(0, len(bit_array), BITS_PER_VALUE):
         if i + BITS_PER_VALUE > len(bit_array):
             break
         
-        bits = bit_array[i:i + BITS_PER_VALUE]  # Get the next set of bits
-        packed = sum(bit << (5 - j) for j, bit in enumerate(bits))  # Pack bits into a single value
-        pos = packed >> 3  # Extract the MSB position
-        data = packed & 0x07  # Extract the actual data
+        bits = bit_array[i:i + BITS_PER_VALUE] 
+        packed = sum(bit << (5 - j) for j, bit in enumerate(bits)) 
+        pos = packed >> 3  
+        data = packed & 0x07  
 
         if pos == 7:
-            val = 0  # If MSB position is 7, the value is 0
+            val = 0 
         else:
-            shift = max(0, 7 - pos - k_bits)  # Calculate shift for reconstruction
-            val = (1 << (7 - pos)) | (data << shift)  # Reconstruct the original value
-        
-        reconstructed.append(np.uint8(val))  # Add the value to the reconstructed list
+            shift = max(0, 7 - pos - k_bits)  
+            val = (1 << (7 - pos)) | (data << shift) 
+        reconstructed.append(np.uint8(val))  
     
-    return np.array(reconstructed[:total_pixels], dtype=np.uint8).reshape(original_shape)  # Reshape and return
+    return np.array(reconstructed[:total_pixels], dtype=np.uint8).reshape(original_shape)  
 
 def compress_image(img, k_bits=3):
     
@@ -102,14 +96,13 @@ def compress_image(img, k_bits=3):
         raise ValueError("Unsupported number of channels (must be 3 or 4)")  
     
     image_type = IMAGE_TYPE_32BIT if num_channels == 4 else IMAGE_TYPE_24BIT  
-    header = struct.pack('!HHBB', img.shape[1], img.shape[0], k_bits, image_type)  # Create header with image info
-    
-    compressed_channels = []  # List to hold compressed channel data
-    bits_info = []  # List to hold number of bits used for each channel
+    header = struct.pack('!HHBB', img.shape[1], img.shape[0], k_bits, image_type)     
+    compressed_channels = [] 
+    bits_info = []  
     for channel in channels:
         compressed, bits = vadf_compress_channel(channel, k_bits)  # Compress each channel
         compressed_channels.append(compressed)  # Store compressed channel
-        bits_info.append(bits)  # Store bits info for channel
+        bits_info.append(bits) 
     
     bits_format = '!IIII' if num_channels == 4 else '!III'  # Format for bits info based on channel count
     header += struct.pack(bits_format, *bits_info)  # Append bits info to header
@@ -126,21 +119,21 @@ def decompress_image(data):
         width, height, k_bits, image_type = struct.unpack('!HHBB', base_header)  # Unpack header data
         num_channels = 4 if image_type == IMAGE_TYPE_32BIT else 3  # Determine number of channels based on image type
         
-        bits_format = '!IIII' if num_channels == 4 else '!III'  # Format for bits info
-        bits_data = data[6:6 + struct.calcsize(bits_format)]  # Extract bits info from data
-        bits_info = list(struct.unpack(bits_format, bits_data))  # Unpack bits info
+        bits_format = '!IIII' if num_channels == 4 else '!III'  
+        bits_data = data[6:6 + struct.calcsize(bits_format)] 
+        bits_info = list(struct.unpack(bits_format, bits_data))  
         
         data_ptr = 6 + struct.calcsize(bits_format)  
         
-        reconstructed_channels = []  # List to hold reconstructed channels
+        reconstructed_channels = []  
         for bits in bits_info:
-            byte_size = ceil(bits / BITS_PER_BYTE)  # Calculate byte size for the channel
-            channel_data = data[data_ptr:data_ptr + byte_size]  # Extract channel data
-            data_ptr += byte_size  # Move data pointer forward
+            byte_size = ceil(bits / BITS_PER_BYTE) 
+            channel_data = data[data_ptr:data_ptr + byte_size] 
+            data_ptr += byte_size 
             
             # Decompress the channel and store it
             channel = vadf_decompress_channel(channel_data, (height, width), k_bits, bits)
-            reconstructed_channels.append(channel)  # Add to reconstructed channels
+            reconstructed_channels.append(channel)  
         
         return cv2.merge(reconstructed_channels)  # Merge channels and return the image
     
@@ -171,12 +164,11 @@ if __name__ == "__main__":
             if choice == "2":
                 img = img[:, :, :3]  # Remove alpha channel if user chooses 24-bit
         
-        # Compress to memory
-        compressed_data = compress_image(img)  # Compress the image
+       
+        compressed_data = compress_image(img)  
         
-        # Decompress from memory
-        reconstructed = decompress_image(compressed_data)  # Decompress the image
-        
+    
+        reconstructed = decompress_image(compressed_data)  
         
         del compressed_data  
         
