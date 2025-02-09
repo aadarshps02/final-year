@@ -18,7 +18,7 @@ Change "rev.png" to the name of your image file, including its extension.
 
 Run the Script: Execute the script from your terminal or command prompt:
 
-python rgbvadf.py
+python shrink.py
 
 Choose Image Format: If your image has an alpha channel (RGBA), you will be prompted to choose whether to save the output as a 32-bit image (with alpha) or a 24-bit image (without alpha).
 
